@@ -598,10 +598,16 @@ impl Service {
             }
         });
 
+        // Singularity fork patch (DECISION-055): build the connection and
+        // register EVERY object (the Service, and, in `initialize` below, every
+        // collection + the `/aliases/default` alias object) BEFORE requesting the
+        // well-known name. Upstream claims the name at connection-build time, so a
+        // client that connects the instant `org.freedesktop.secrets` appears on
+        // the bus can race `initialize` and get `UnknownObject` on
+        // `/aliases/default`, which cascades into a promptless `CreateCollection`
+        // hang (the COSMIC prompter failure class). Claiming the name last closes
+        // that window: the name is only visible once the daemon can fully serve.
         let connection = zbus::connection::Builder::session()?
-            .allow_name_replacements(true)
-            .replace_existing_names(request_replacement)
-            .name(oo7::dbus::api::Service::DESTINATION.as_deref().unwrap())?
             .serve_at(
                 oo7::dbus::api::Service::PATH.as_deref().unwrap(),
                 service.clone(),
@@ -622,7 +628,23 @@ impl Service {
         let discovered_keyrings = service.discover_keyrings(secret.clone()).await?;
 
         service
-            .initialize(connection, discovered_keyrings, secret, true)
+            .initialize(connection.clone(), discovered_keyrings, secret, true)
+            .await?;
+
+        // Now every object is registered: request the well-known name (same flags
+        // upstream set on the builder, AllowReplacement, plus ReplaceExisting when
+        // `--replace` was passed).
+        use zbus::fdo::RequestNameFlags;
+        let name_flags = if request_replacement {
+            RequestNameFlags::AllowReplacement | RequestNameFlags::ReplaceExisting
+        } else {
+            RequestNameFlags::AllowReplacement.into()
+        };
+        connection
+            .request_name_with_flags(
+                oo7::dbus::api::Service::DESTINATION.as_deref().unwrap(),
+                name_flags,
+            )
             .await?;
 
         // Replay any secrets that the PAM listener buffered during startup
