@@ -10,12 +10,16 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+# Singularity fork (DECISION-055): the daemon and login helper are built
+# and shipped under first-party names. Only the [[bin]] names change; the
+# login-helper socket path is a hardcoded literal shared by both bins and
+# is independent of CARGO_BIN_NAME, so the handshake is unaffected.
 [[bin]]
-name = "oo7-daemon"
+name = "singularity-secrets"
 path = "src/main.rs"
 
 [[bin]]
-name = "oo7-daemon-login"
+name = "singularity-secrets-login"
 path = "src/login.rs"
 
 [lib]
