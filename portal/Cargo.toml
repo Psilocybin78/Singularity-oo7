@@ -12,6 +12,12 @@ rust-version.workspace = true
 version.workspace = true
 description = "Secret portal implementation using oo7"
 
+# Singularity fork (DECISION-055): ship the Secret portal backend under a
+# first-party bin name. The live D-Bus name is renamed in src/main.rs.
+[[bin]]
+name = "singularity-secrets-portal"
+path = "src/main.rs"
+
 [dependencies]
 ashpd = {workspace = true, features = ["backend", "secret", "tracing"]}
 clap.workspace = true

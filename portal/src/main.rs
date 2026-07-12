@@ -11,7 +11,11 @@ pub use error::Result;
 use oo7::dbus::Service;
 use tokio::{io::AsyncWriteExt, sync::Mutex, task::AbortHandle};
 
-const PORTAL_NAME: &str = "org.freedesktop.impl.portal.desktop.oo7";
+// Singularity fork (DECISION-055): first-party D-Bus name, distinct from the
+// compositor's own org.freedesktop.impl.portal.desktop.singularity backend.
+const PORTAL_NAME: &str = "org.freedesktop.impl.portal.desktop.singularity-secrets";
+// Shared secret id for non-sandboxed callers that present no sandbox app id.
+const FALLBACK_HOST_APP_ID: &str = "singularity.host";
 
 #[derive(Default)]
 struct Secret {
@@ -69,11 +73,16 @@ impl ashpd::backend::secret::SecretImpl for Secret {
 async fn send_secret_to_app(app_id: &ashpd::MaybeAppID, fd: std::os::fd::OwnedFd) -> Result<()> {
     let service = Service::new().await?;
     let collection = service.default_collection().await?;
-    let Ok(app_id) = app_id.inner() else {
-        return Err(
-            ashpd::PortalError::InvalidArgument("A valid App ID is required".to_string()).into(),
-        );
+    // Singularity fork (DECISION-055): non-sandboxed callers (native apps like
+    // browsers / Electron apps) have no sandbox app id, so xdg-desktop-portal
+    // passes an empty id. Upstream refuses these; we serve them a stable shared
+    // host secret instead, so the OS keyring backs the Secret portal for every
+    // app, not only Flatpak-sandboxed ones.
+    let app_id_str: String = match app_id.inner() {
+        Ok(id) => id.to_string(),
+        Err(_) => FALLBACK_HOST_APP_ID.to_string(),
     };
+    let app_id = app_id_str.as_str();
 
     let attributes = &[("app_id", app_id)];
 
